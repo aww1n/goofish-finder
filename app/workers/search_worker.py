@@ -1,4 +1,3 @@
-import asyncio
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -19,6 +18,7 @@ from app.services.filters import passes_hard_filters
 from app.services.item_service import ItemService
 from app.services.market_price import calculate_market_price
 from app.services.notification_service import NotificationService
+from app.workers.async_utils import run_async
 
 log = structlog.get_logger()
 
@@ -101,7 +101,7 @@ async def process_search(task_id: UUID) -> int:
 )
 def run_search(self, task_id: str) -> int:
     try:
-        return asyncio.run(process_search(UUID(task_id)))
+        return run_async(process_search(UUID(task_id)))
     except ProviderRateLimited as exc:
         raise self.retry(exc=exc, countdown=min(exc.retry_after or 300, 3600), max_retries=5)
 
@@ -133,7 +133,7 @@ async def find_due() -> list[str]:
 
 @shared_task
 def enqueue_due_searches() -> int:
-    ids = asyncio.run(find_due())
+    ids = run_async(find_due())
     for task_id in ids:
         run_search.apply_async(args=[task_id], task_id=f"search_task:{task_id}")
     return len(ids)

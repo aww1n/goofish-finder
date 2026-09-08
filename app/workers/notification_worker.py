@@ -1,4 +1,3 @@
-import asyncio
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -11,6 +10,7 @@ from app.core.config import get_settings
 from app.db.models import Alert, Item, SearchTask, User, UserSettings
 from app.db.session import SessionFactory
 from app.services.notification_service import NotificationService, is_quiet_time
+from app.workers.async_utils import run_async
 
 
 async def send_alert(alert_id: UUID) -> bool:
@@ -64,7 +64,7 @@ async def send_alert(alert_id: UUID) -> bool:
 
 @shared_task(bind=True, autoretry_for=(TimeoutError,), retry_backoff=True, max_retries=5)
 def deliver_alert(self, alert_id: str) -> bool:
-    return asyncio.run(send_alert(UUID(alert_id)))
+    return run_async(send_alert(UUID(alert_id)))
 
 
 async def pending_ids() -> list[str]:
@@ -75,7 +75,7 @@ async def pending_ids() -> list[str]:
 
 @shared_task
 def dispatch_pending_alerts() -> int:
-    ids = asyncio.run(pending_ids())
+    ids = run_async(pending_ids())
     for alert_id in ids:
         deliver_alert.apply_async(args=[alert_id], task_id=f"notification:{alert_id}")
     return len(ids)

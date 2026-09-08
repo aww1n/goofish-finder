@@ -7,3 +7,5 @@ __pycache__/
 *.db
 *.egg-info/
 .coverage
+celerybeat-schedule*
+logs/
