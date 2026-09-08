@@ -27,14 +27,14 @@ alembic upgrade head
 pytest
 ```
 
-Заполните `BOT_TOKEN` и `ADMIN_TOKEN` в `.env`, затем запустите процессы в отдельных терминалах:
+Заполните `BOT_TOKEN` и `ADMIN_TOKEN` в `.env`, затем запустите весь проект одной командой:
 
 ```bash
-python -m app.main
-celery -A app.workers.celery_app:celery_app worker -Q searches,notifications -l INFO
-celery -A app.workers.celery_app:celery_app beat -l INFO
-uvicorn app.api.main:app --reload
+./run.sh
 ```
+
+Supervisor применит миграции и запустит Telegram-бота, worker, scheduler и внутренний API.
+Один `Ctrl+C` корректно остановит все процессы. Повторный параллельный запуск блокируется.
 
 После запуска откройте бота и отправьте `/start`. API предоставляет `GET /health/live` и
 `GET /health/ready`; `/admin/status` требует заголовок `Authorization: Bearer <ADMIN_TOKEN>`.
