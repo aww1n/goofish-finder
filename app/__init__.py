@@ -1,0 +1,1 @@
+"""GOFISH FINDER application."""
