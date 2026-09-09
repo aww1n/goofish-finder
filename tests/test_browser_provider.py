@@ -73,3 +73,35 @@ async def test_login_overlay_is_closed_by_parser():
     page = Page()
     assert await BrowserGoofishProvider._dismiss_login_overlay(page) is True
     assert page.clicked is True
+
+
+@pytest.mark.asyncio
+async def test_baxia_dialog_uses_its_own_close_control():
+    class Locator:
+        def __init__(self, page, selector):
+            self.page = page
+            self.selector = selector
+            self.first = self
+
+        async def is_visible(self, timeout):
+            assert timeout == 200
+            return True
+
+        async def click(self, timeout):
+            assert self.selector == ".baxia-dialog-close"
+            assert timeout == 2000
+            self.page.clicked = True
+
+        async def wait_for(self, state, timeout):
+            assert self.selector == ".baxia-dialog"
+            assert state == "hidden" and timeout == 3000
+
+    class Page:
+        clicked = False
+
+        def locator(self, selector):
+            return Locator(self, selector)
+
+    page = Page()
+    assert await BrowserGoofishProvider._dismiss_baxia_dialog(page) is True
+    assert page.clicked is True

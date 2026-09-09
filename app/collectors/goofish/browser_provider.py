@@ -180,6 +180,31 @@ class BrowserGoofishProvider(GoofishProvider):
         return False
 
     @staticmethod
+    async def _dismiss_baxia_dialog(page: Page) -> bool:
+        """Use Baxia's own close control; never interact with its verification iframe."""
+        close_button = page.locator(".baxia-dialog-close").first
+        try:
+            if await close_button.is_visible(timeout=200):
+                await close_button.click(timeout=2000)
+                await page.locator(".baxia-dialog").wait_for(state="hidden", timeout=3000)
+                return True
+        except PlaywrightTimeoutError:
+            return False
+        return False
+
+    async def _dismiss_delayed_overlays(self, page: Page, wait_ms: int = 2500) -> bool:
+        """Watch the short post-navigation window in which Goofish mounts its dialogs."""
+        dismissed = False
+        deadline = time.monotonic() + wait_ms / 1000
+        while time.monotonic() < deadline:
+            if await self._dismiss_baxia_dialog(page):
+                dismissed = True
+            if await self._dismiss_login_overlay(page):
+                dismissed = True
+            await page.wait_for_timeout(100)
+        return dismissed
+
+    @staticmethod
     def _validate_access(body: str) -> None:
         if any(marker in body for marker in CHALLENGE_MARKERS):
             raise ProviderAccessChallenge(
@@ -192,6 +217,8 @@ class BrowserGoofishProvider(GoofishProvider):
             return []
         browser_page, body, _responses = await self._open("https://www.goofish.com/")
         try:
+            # The home-page login modal is delayed by roughly two seconds.
+            await self._dismiss_delayed_overlays(browser_page)
             search_input = browser_page.locator(
                 'form[class*="search-container"] input[type="text"]'
             ).first
@@ -207,9 +234,9 @@ class BrowserGoofishProvider(GoofishProvider):
             await browser_page.wait_for_url(
                 "**/search**", timeout=self.settings.goofish_timeout_seconds * 1000
             )
-            # The login modal is mounted immediately after form submission and can
-            # prevent the result grid from loading, so dismiss it before waiting.
-            await self._dismiss_login_overlay(browser_page)
+            # Baxia is mounted almost immediately after form submission and sits
+            # above the regular login modal. Always use each dialog's own X.
+            await self._dismiss_delayed_overlays(browser_page)
             try:
                 await browser_page.locator('a[href*="/item"]').first.wait_for(
                     state="visible", timeout=self.settings.goofish_timeout_seconds * 1000
@@ -217,7 +244,7 @@ class BrowserGoofishProvider(GoofishProvider):
             except PlaywrightTimeoutError:
                 pass
             # It can also be mounted a second time after the result grid appears.
-            await self._dismiss_login_overlay(browser_page)
+            await self._dismiss_delayed_overlays(browser_page, wait_ms=500)
             body = await browser_page.locator("body").inner_text()
             self._validate_access(body)
             cards = await browser_page.locator('a[href*="/item"]').evaluate_all(
