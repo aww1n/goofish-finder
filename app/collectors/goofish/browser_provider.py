@@ -4,7 +4,7 @@ import time
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, quote_plus, urlparse
+from urllib.parse import parse_qs, urlparse
 
 from playwright.async_api import (
     BrowserContext,
@@ -190,12 +190,36 @@ class BrowserGoofishProvider(GoofishProvider):
         # The public UI currently exposes scrolling rather than a documented page parameter.
         if page != 1:
             return []
-        url = f"https://www.goofish.com/search?q={quote_plus(task.query)}"
-        browser_page, body, _responses = await self._open(url)
+        browser_page, body, _responses = await self._open("https://www.goofish.com/")
         try:
-            # Goofish may mount the login modal asynchronously after search navigation.
-            if await self._dismiss_login_overlay(browser_page):
-                body = await browser_page.locator("body").inner_text()
+            search_input = browser_page.locator(
+                'form[class*="search-container"] input[type="text"]'
+            ).first
+            search_button = browser_page.locator(
+                'form[class*="search-container"] button[type="submit"]'
+            ).first
+            await search_input.wait_for(
+                state="visible", timeout=self.settings.goofish_timeout_seconds * 1000
+            )
+            await search_input.fill(task.query)
+            await self._throttle()
+            await search_button.click(timeout=self.settings.goofish_timeout_seconds * 1000)
+            await browser_page.wait_for_url(
+                "**/search**", timeout=self.settings.goofish_timeout_seconds * 1000
+            )
+            # The login modal is mounted immediately after form submission and can
+            # prevent the result grid from loading, so dismiss it before waiting.
+            await self._dismiss_login_overlay(browser_page)
+            try:
+                await browser_page.locator('a[href*="/item"]').first.wait_for(
+                    state="visible", timeout=self.settings.goofish_timeout_seconds * 1000
+                )
+            except PlaywrightTimeoutError:
+                pass
+            # It can also be mounted a second time after the result grid appears.
+            await self._dismiss_login_overlay(browser_page)
+            body = await browser_page.locator("body").inner_text()
+            self._validate_access(body)
             cards = await browser_page.locator('a[href*="/item"]').evaluate_all(
                 """links => links.map(link => ({
                     href: link.href,
