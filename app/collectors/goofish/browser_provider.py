@@ -32,7 +32,15 @@ from app.core.config import Settings
 PRICE_PATTERN = re.compile(r"¥\s*([\d,]+(?:\.\d+)?)")
 RATING_PATTERN = re.compile(r"好评率\s*(\d+(?:\.\d+)?)%")
 SALES_PATTERN = re.compile(r"卖出\s*(\d+)\s*件")
-CHALLENGE_MARKERS = ("安全验证", "验证码", "滑动验证", "请完成验证", "访问异常")
+CHALLENGE_MARKERS = (
+    "安全验证",
+    "验证码",
+    "滑动验证",
+    "请完成验证",
+    "访问异常",
+    "无法通过身份验证",
+    "当前操作环境不安全",
+)
 LOGIN_MARKERS = ("立即登录", "扫码登录", "短信登录")
 CONDITION_MARKERS = ("全新未拆封", "全新", "几乎全新", "轻微使用痕迹", "明显使用痕迹")
 
@@ -71,6 +79,13 @@ def title_from_text(text: str) -> str | None:
         and "人想要" not in line
     ]
     return candidates[0][:500] if candidates else None
+
+
+def matches_query(title: str, query: str) -> bool:
+    title_lower = title.casefold()
+    tokens = re.findall(r"[a-zа-яё0-9]+|[\u4e00-\u9fff]{2,}", query.casefold())
+    significant = [token for token in tokens if len(token) >= 2]
+    return bool(significant) and all(token in title_lower for token in significant)
 
 
 class BrowserGoofishProvider(GoofishProvider):
@@ -138,6 +153,7 @@ class BrowserGoofishProvider(GoofishProvider):
                     )
                 except PlaywrightTimeoutError:
                     pass
+                await self._dismiss_login_overlay(page)
                 body = await page.locator("body").inner_text()
                 self._validate_access(body)
                 return page, body, captured_json
@@ -149,6 +165,19 @@ class BrowserGoofishProvider(GoofishProvider):
                 raise ProviderError(
                     f"Goofish browser request failed: {type(exc).__name__}"
                 ) from exc
+
+    @staticmethod
+    async def _dismiss_login_overlay(page: Page) -> bool:
+        """Close the optional login modal without authenticating or bypassing a challenge."""
+        close_button = page.locator('[class*="closeIconBg--"]').first
+        try:
+            if await close_button.is_visible(timeout=500):
+                await close_button.click(timeout=2000)
+                await page.locator("#alibaba-login-box").wait_for(state="detached", timeout=3000)
+                return True
+        except PlaywrightTimeoutError:
+            return False
+        return False
 
     @staticmethod
     def _validate_access(body: str) -> None:
@@ -186,6 +215,8 @@ class BrowserGoofishProvider(GoofishProvider):
                 price = price_from_text(card["text"])
                 title = title_from_text(card["text"])
                 if not item_id or item_id in seen or price is None or not title:
+                    continue
+                if not matches_query(title, task.query):
                     continue
                 seen.add(item_id)
                 self._item_urls[item_id] = card["href"]
