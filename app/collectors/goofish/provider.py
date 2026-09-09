@@ -3,6 +3,7 @@ from decimal import Decimal
 from typing import Any
 
 from app.collectors.base import GoofishProvider, RawListing, RawSeller
+from app.collectors.goofish.browser_provider import BrowserGoofishProvider
 from app.core.config import Settings
 
 
@@ -55,6 +56,8 @@ class MockGoofishProvider(GoofishProvider):
 def create_provider(settings: Settings) -> GoofishProvider:
     if settings.goofish_provider == "mock":
         return MockGoofishProvider()
+    if settings.goofish_provider == "browser":
+        return BrowserGoofishProvider(settings)
     raise RuntimeError(
         "Real Goofish provider is not configured. Use GOOFISH_PROVIDER=mock or implement an authorized provider."
     )

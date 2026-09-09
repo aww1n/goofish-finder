@@ -44,6 +44,14 @@ class ProviderRateLimited(ProviderError):
         self.retry_after = retry_after
 
 
+class ProviderAuthRequired(ProviderError):
+    """The provider requires an interactive, user-authorized login."""
+
+
+class ProviderAccessChallenge(ProviderError):
+    """The source presented CAPTCHA or another access challenge."""
+
+
 class GoofishProvider(ABC):
     @abstractmethod
     async def search(self, task: Any, *, page: int = 1) -> list[RawListing]: ...

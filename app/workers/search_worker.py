@@ -5,7 +5,7 @@ import structlog
 from celery import shared_task
 from sqlalchemy import func, or_, select
 
-from app.collectors.base import ProviderRateLimited
+from app.collectors.base import ProviderError, ProviderRateLimited
 from app.collectors.goofish.normalizer import Normalizer
 from app.collectors.goofish.parser import detect_inspection_service
 from app.collectors.goofish.provider import create_provider
@@ -35,12 +35,25 @@ async def process_search(task_id: UUID) -> int:
                 or task.status == SearchStatus.PAUSED
             ):
                 return 0
-            raws = await provider.search(task)
+            try:
+                raws = await provider.search(task)
+            except ProviderError as exc:
+                task.consecutive_errors += 1
+                task.last_error = str(exc)[:1000]
+                task.status = (
+                    SearchStatus.ERROR
+                    if task.consecutive_errors >= 3
+                    else SearchStatus.ACTIVE_WITH_ERRORS
+                )
+                await session.commit()
+                raise
             normalizer = Normalizer()
             market = calculate_market_price([raw.price for raw in raws])
             search_filter = await session.get(SearchFilter, task.id)
             accepted = 0
             for raw in raws:
+                if raw.raw.get("details_complete") is not True:
+                    raw = await provider.get_item_details(raw.external_id)
                 normalized = normalizer.normalize(raw).as_dict()
                 evidence = raw.inspection_evidence
                 inspection = detect_inspection_service(
