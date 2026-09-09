@@ -193,6 +193,9 @@ class BrowserGoofishProvider(GoofishProvider):
         url = f"https://www.goofish.com/search?q={quote_plus(task.query)}"
         browser_page, body, _responses = await self._open(url)
         try:
+            # Goofish may mount the login modal asynchronously after search navigation.
+            if await self._dismiss_login_overlay(browser_page):
+                body = await browser_page.locator("body").inner_text()
             cards = await browser_page.locator('a[href*="/item"]').evaluate_all(
                 """links => links.map(link => ({
                     href: link.href,
@@ -242,6 +245,9 @@ class BrowserGoofishProvider(GoofishProvider):
         url = self._item_urls.get(item_id, f"https://www.goofish.com/item?id={item_id}")
         page, body, responses = await self._open(url)
         try:
+            # Item pages can display the same delayed login modal independently.
+            if await self._dismiss_login_overlay(page):
+                body = await page.locator("body").inner_text()
             title = (await page.title()).removesuffix("_闲鱼").strip()
             price = price_from_text(body)
             if not title or price is None:
